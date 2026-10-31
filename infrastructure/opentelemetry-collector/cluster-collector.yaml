@@ -42,7 +42,7 @@ spec:
     resources:
       requests:
         cpu: 25m
-        memory: 256Mi
+        memory: 128Mi
       limits:
         memory: 256Mi
     # Nothing sends to this Collector, so it needs no Service or receiver ports.

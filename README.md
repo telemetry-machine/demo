@@ -65,8 +65,11 @@ for the details.
 
 ## Run it yourself
 
-You need a Kubernetes cluster with about 8 GB of memory free, and a Telemetry
-Machine organization.
+You need a Kubernetes cluster and a Telemetry Machine organization. The pods
+request about 3 GiB of memory and use about 3.5 GiB. One 4 GB node fits them
+with a few GiB of swap. With 1 GiB more to spare, you can turn the load
+generator's browser traffic back on (`LOCUST_BROWSER_TRAFFIC_ENABLED` in
+[`apps/otel-demo/helmrelease.yaml`](apps/otel-demo/helmrelease.yaml)).
 
 1. In Telemetry Machine, create the six datasets above, and an ingest key that
    can write to them.

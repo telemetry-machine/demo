@@ -59,109 +59,122 @@ spec:
     opensearch:
       enabled: false
 
-    # Memory requests match each service's normal use, so the demo fits on one
-    # 8 GB node.
+    # Sized so every service fits on one node with 4 GB of memory. Requests
+    # are about each service's normal use, a little under it for the services
+    # that sit idle most of the time (agent, chatbot, mcp, flagd-ui), and
+    # limits leave room for bursts.
     components:
       accounting:
         resources:
-          requests: {cpu: 10m, memory: 160Mi}
-          limits: {cpu: 500m, memory: 160Mi}
+          requests: {cpu: 10m, memory: 128Mi}
+          limits: {cpu: 500m, memory: 192Mi}
       ad:
         resources:
-          requests: {cpu: 10m, memory: 384Mi}
-          limits: {cpu: 500m, memory: 384Mi}
+          requests: {cpu: 10m, memory: 192Mi}
+          limits: {cpu: 500m, memory: 320Mi}
       agent:
         resources:
-          requests: {cpu: 25m, memory: 512Mi}
+          requests: {cpu: 25m, memory: 256Mi}
           limits: {cpu: 500m, memory: 512Mi}
       astronomy-db:
         resources:
-          requests: {cpu: 10m, memory: 256Mi}
-          limits: {cpu: 500m, memory: 256Mi}
+          requests: {cpu: 10m, memory: 96Mi}
+          limits: {cpu: 500m, memory: 192Mi}
       cart:
         resources:
-          requests: {cpu: 10m, memory: 80Mi}
-          limits: {cpu: 500m, memory: 80Mi}
+          requests: {cpu: 10m, memory: 64Mi}
+          limits: {cpu: 500m, memory: 96Mi}
       chatbot:
         resources:
-          requests: {cpu: 50m, memory: 192Mi}
+          requests: {cpu: 25m, memory: 96Mi}
           limits: {cpu: 500m, memory: 192Mi}
       checkout:
         resources:
           requests: {cpu: 5m, memory: 16Mi}
-          limits: {cpu: 500m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       currency:
         resources:
-          requests: {cpu: 5m, memory: 16Mi}
-          limits: {cpu: 500m, memory: 16Mi}
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       email:
         resources:
-          requests: {cpu: 5m, memory: 96Mi}
+          requests: {cpu: 5m, memory: 64Mi}
           limits: {cpu: 500m, memory: 96Mi}
       fraud-detection:
         resources:
-          requests: {cpu: 10m, memory: 384Mi}
-          limits: {cpu: 1000m, memory: 384Mi}
+          requests: {cpu: 10m, memory: 192Mi}
+          limits: {cpu: 1000m, memory: 320Mi}
       frontend:
         resources:
-          requests: {cpu: 50m, memory: 160Mi}
-          limits: {cpu: 500m, memory: 160Mi}
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {cpu: 500m, memory: 192Mi}
       frontend-proxy:
         resources:
-          requests: {cpu: 20m, memory: 48Mi}
-          limits: {cpu: 500m, memory: 48Mi}
+          requests: {cpu: 20m, memory: 32Mi}
+          limits: {cpu: 500m, memory: 64Mi}
       image-provider:
         resources:
-          requests: {cpu: 5m, memory: 16Mi}
-          limits: {cpu: 500m, memory: 16Mi}
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       kafka:
+        # The chart gives Kafka a 400M heap; 256M is plenty for the demo's
+        # one topic.
+        envOverrides:
+          - name: KAFKA_HEAP_OPTS
+            value: -Xmx256M -Xms256M
         resources:
-          requests: {cpu: 25m, memory: 896Mi}
-          limits: {cpu: 1000m, memory: 896Mi}
+          requests: {cpu: 25m, memory: 384Mi}
+          limits: {cpu: 1000m, memory: 640Mi}
       load-generator:
+        # Browser traffic runs a headless Chromium, which needs about 1 GiB
+        # more than a 4 GB node has to spare. Locust's HTTP users still reach
+        # every service; only the frontend's browser spans are missing.
+        envOverrides:
+          - name: LOCUST_BROWSER_TRAFFIC_ENABLED
+            value: "false"
         resources:
-          requests: {cpu: 650m, memory: 1280Mi}
-          limits: {cpu: 1500m, memory: 1280Mi}
+          requests: {cpu: 100m, memory: 192Mi}
+          limits: {cpu: 1000m, memory: 512Mi}
       mcp:
         resources:
-          requests: {cpu: 5m, memory: 160Mi}
-          limits: {cpu: 500m, memory: 160Mi}
+          requests: {cpu: 5m, memory: 96Mi}
+          limits: {cpu: 500m, memory: 192Mi}
       opamp-server:
         resources:
-          requests: {cpu: 5m, memory: 16Mi}
-          limits: {cpu: 500m, memory: 16Mi}
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       payment:
         resources:
-          requests: {cpu: 5m, memory: 80Mi}
-          limits: {cpu: 500m, memory: 80Mi}
+          requests: {cpu: 5m, memory: 64Mi}
+          limits: {cpu: 500m, memory: 96Mi}
       product-catalog:
         resources:
-          requests: {cpu: 50m, memory: 20Mi}
-          limits: {cpu: 500m, memory: 20Mi}
+          requests: {cpu: 50m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       quote:
         resources:
           requests: {cpu: 5m, memory: 24Mi}
-          limits: {cpu: 500m, memory: 24Mi}
+          limits: {cpu: 500m, memory: 48Mi}
       recommendation:
         resources:
-          requests: {cpu: 20m, memory: 80Mi}
-          limits: {cpu: 500m, memory: 80Mi}
+          requests: {cpu: 20m, memory: 48Mi}
+          limits: {cpu: 500m, memory: 96Mi}
       shipping:
         resources:
-          requests: {cpu: 5m, memory: 16Mi}
-          limits: {cpu: 500m, memory: 16Mi}
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       telemetry-docs:
         resources:
-          requests: {cpu: 5m, memory: 16Mi}
-          limits: {cpu: 500m, memory: 16Mi}
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       valkey-cart:
         resources:
-          requests: {cpu: 5m, memory: 16Mi}
-          limits: {cpu: 500m, memory: 16Mi}
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 500m, memory: 32Mi}
       flagd:
         resources:
-          requests: {cpu: 5m, memory: 75Mi}
-          limits: {memory: 75Mi}
+          requests: {cpu: 5m, memory: 64Mi}
+          limits: {memory: 96Mi}
         # Fails 10% of payments, so the traces always hold some errors to find.
         # The second --uri file overrides the paymentFailure flag from the first.
         command:
@@ -219,8 +232,8 @@ spec:
               - name: OTEL_RESOURCE_ATTRIBUTES_EXTRA
                 value: service.criticality=low
             resources:
-              requests: {cpu: 5m, memory: 250Mi}
-              limits: {memory: 250Mi}
+              requests: {cpu: 5m, memory: 96Mi}
+              limits: {memory: 192Mi}
             volumeMounts:
               - name: config-rw
                 mountPath: /app/data
@@ -247,10 +260,10 @@ spec:
       resources:
         requests:
           cpu: 25m
-          memory: 192Mi
+          memory: 128Mi
         limits:
           cpu: 500m
-          memory: 192Mi
+          memory: 256Mi
       extraEnvs:
         - name: TM_INGEST_KEY
           valueFrom:
