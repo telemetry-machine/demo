@@ -1,0 +1,321 @@
+# The OpenTelemetry Demo (https://opentelemetry.io/docs/demo/): an online shop
+# of about 20 services in several languages, with a load generator that keeps
+# it busy. Each service sends OTLP to the demo's own Collector, which sends
+# traces, logs and metrics to Telemetry Machine.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: otel-demo
+  namespace: otel-demo
+  annotations:
+    # The values hold the Collector's own ${env:...} references, which Flux's
+    # variable substitution would otherwise try to fill.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: opentelemetry-demo
+      version: 0.42.6
+      sourceRef:
+        kind: HelmRepository
+        name: open-telemetry
+        namespace: flux-system
+  install:
+    timeout: 20m
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 20m
+    remediation:
+      retries: 3
+  # The demo fills most of its node, so a rollout replaces each pod rather than
+  # starting a second copy first.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: not-used
+              spec:
+                strategy:
+                  type: RollingUpdate
+                  rollingUpdate:
+                    maxSurge: 0
+                    maxUnavailable: 1
+  values:
+    # Telemetry Machine replaces the bundled Jaeger, Prometheus, Grafana and
+    # OpenSearch.
+    jaeger:
+      enabled: false
+    prometheus:
+      enabled: false
+    grafana:
+      enabled: false
+    opensearch:
+      enabled: false
+
+    # Memory requests match each service's normal use, so the demo fits on one
+    # 8 GB node.
+    components:
+      accounting:
+        resources:
+          requests: {cpu: 10m, memory: 160Mi}
+          limits: {cpu: 500m, memory: 160Mi}
+      ad:
+        resources:
+          requests: {cpu: 10m, memory: 384Mi}
+          limits: {cpu: 500m, memory: 384Mi}
+      agent:
+        resources:
+          requests: {cpu: 25m, memory: 512Mi}
+          limits: {cpu: 500m, memory: 512Mi}
+      astronomy-db:
+        resources:
+          requests: {cpu: 10m, memory: 256Mi}
+          limits: {cpu: 500m, memory: 256Mi}
+      cart:
+        resources:
+          requests: {cpu: 10m, memory: 80Mi}
+          limits: {cpu: 500m, memory: 80Mi}
+      chatbot:
+        resources:
+          requests: {cpu: 50m, memory: 192Mi}
+          limits: {cpu: 500m, memory: 192Mi}
+      checkout:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 16Mi}
+      currency:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 16Mi}
+      email:
+        resources:
+          requests: {cpu: 5m, memory: 96Mi}
+          limits: {cpu: 500m, memory: 96Mi}
+      fraud-detection:
+        resources:
+          requests: {cpu: 10m, memory: 384Mi}
+          limits: {cpu: 1000m, memory: 384Mi}
+      frontend:
+        resources:
+          requests: {cpu: 50m, memory: 160Mi}
+          limits: {cpu: 500m, memory: 160Mi}
+      frontend-proxy:
+        resources:
+          requests: {cpu: 20m, memory: 48Mi}
+          limits: {cpu: 500m, memory: 48Mi}
+      image-provider:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 16Mi}
+      kafka:
+        resources:
+          requests: {cpu: 25m, memory: 896Mi}
+          limits: {cpu: 1000m, memory: 896Mi}
+      load-generator:
+        resources:
+          requests: {cpu: 650m, memory: 1280Mi}
+          limits: {cpu: 1500m, memory: 1280Mi}
+      mcp:
+        resources:
+          requests: {cpu: 5m, memory: 160Mi}
+          limits: {cpu: 500m, memory: 160Mi}
+      opamp-server:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 16Mi}
+      payment:
+        resources:
+          requests: {cpu: 5m, memory: 80Mi}
+          limits: {cpu: 500m, memory: 80Mi}
+      product-catalog:
+        resources:
+          requests: {cpu: 50m, memory: 20Mi}
+          limits: {cpu: 500m, memory: 20Mi}
+      quote:
+        resources:
+          requests: {cpu: 5m, memory: 24Mi}
+          limits: {cpu: 500m, memory: 24Mi}
+      recommendation:
+        resources:
+          requests: {cpu: 20m, memory: 80Mi}
+          limits: {cpu: 500m, memory: 80Mi}
+      shipping:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 16Mi}
+      telemetry-docs:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 16Mi}
+      valkey-cart:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 500m, memory: 16Mi}
+      flagd:
+        resources:
+          requests: {cpu: 5m, memory: 75Mi}
+          limits: {memory: 75Mi}
+        # Fails 10% of payments, so the traces always hold some errors to find.
+        # The second --uri file overrides the paymentFailure flag from the first.
+        command:
+          - /flagd-build
+          - start
+          - --port
+          - "8013"
+          - --ofrep-port
+          - "8016"
+          - --uri
+          - file:./etc/flagd/demo.flagd.json
+          - --uri
+          - file:/etc/flagd-overrides/overrides.flagd.json
+        mountedConfigMaps:
+          - name: flag-overrides
+            mountPath: /etc/flagd-overrides
+            data:
+              overrides.flagd.json: |
+                {
+                  "$schema": "https://flagd.dev/schema/v0/flags.json",
+                  "flags": {
+                    "paymentFailure": {
+                      "description": "Fail payment service charge requests n%",
+                      "state": "ENABLED",
+                      "variants": {
+                        "100%": 1,
+                        "90%": 0.95,
+                        "75%": 0.75,
+                        "50%": 0.5,
+                        "25%": 0.25,
+                        "10%": 0.1,
+                        "off": 0
+                      },
+                      "defaultVariant": "10%"
+                    }
+                  }
+                }
+        # The chart's flagd-ui sidecar, repeated here (Helm replaces lists
+        # whole) to set its resources.
+        sidecarContainers:
+          - name: flagd-ui
+            useDefault:
+              env: true
+            service:
+              port: 4000
+            env:
+              - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                value: http://$(OTEL_COLLECTOR_NAME):4318
+              - name: FLAGD_UI_PORT
+                value: "4000"
+              - name: SECRET_KEY_BASE
+                value: yYrECL4qbNwleYInGJYvVnSkwJuSQJ4ijPTx5tirGUXrbznFIBFVJdPl5t6O9ASw
+              - name: PHX_HOST
+                value: localhost
+              - name: OTEL_RESOURCE_ATTRIBUTES_EXTRA
+                value: service.criticality=low
+            resources:
+              requests: {cpu: 5m, memory: 250Mi}
+              limits: {memory: 250Mi}
+            volumeMounts:
+              - name: config-rw
+                mountPath: /app/data
+
+    # The demo's own Collector. Every service sends it OTLP, and it sends
+    # traces, logs and metrics on to Telemetry Machine.
+    opentelemetry-collector:
+      # One gateway for the whole cluster. The Collectors in
+      # infrastructure/opentelemetry-collector collect node, pod and cluster
+      # metrics, so the presets that would collect them again are off.
+      mode: deployment
+      presets:
+        hostMetrics:
+          enabled: false
+        kubeletMetrics:
+          enabled: false
+        clusterMetrics:
+          enabled: false
+        annotationDiscovery:
+          metrics:
+            enabled: false
+      image:
+        tag: 0.164.0
+      resources:
+        requests:
+          cpu: 25m
+          memory: 192Mi
+        limits:
+          cpu: 500m
+          memory: 192Mi
+      extraEnvs:
+        - name: TM_INGEST_KEY
+          valueFrom:
+            secretKeyRef:
+              name: telemetry-machine
+              key: ingest-key
+      config:
+        processors:
+          # host.name would be the Collector pod's name, so it is left out.
+          resource_detection:
+            override: false
+            system:
+              resource_attributes:
+                host.name:
+                  enabled: false
+          # Matches telemetry to its pod by UID or IP, or else by the
+          # connection it arrived on.
+          k8s_attributes:
+            pod_association:
+              - sources:
+                  - from: resource_attribute
+                    name: k8s.pod.uid
+              - sources:
+                  - from: resource_attribute
+                    name: k8s.pod.ip
+              - sources:
+                  - from: connection
+              - sources:
+                  - from: resource_attribute
+                    name: container.id
+        # Telemetry Machine takes OTLP/HTTP. X-API-Key authenticates, and
+        # X-Dataset-Name picks the dataset the data lands in.
+        exporters:
+          otlp_http/traces:
+            endpoint: https://api.telemetrymachine.com
+            headers:
+              X-API-Key: ${env:TM_INGEST_KEY}
+              X-Dataset-Name: traces
+            sending_queue:
+              batch: {}
+          otlp_http/logs:
+            endpoint: https://api.telemetrymachine.com
+            headers:
+              X-API-Key: ${env:TM_INGEST_KEY}
+              X-Dataset-Name: logs
+            sending_queue:
+              batch: {}
+          otlp_http/metrics:
+            endpoint: https://api.telemetrymachine.com
+            headers:
+              X-API-Key: ${env:TM_INGEST_KEY}
+              X-Dataset-Name: metrics
+            sending_queue:
+              batch: {}
+          # Telemetry Machine doesn't take profiles. The chart's profiles
+          # pipeline can't be removed from a subchart (Helm can't null a
+          # subchart's default), so it goes nowhere.
+          nop: {}
+        service:
+          pipelines:
+            traces:
+              exporters: [otlp_http/traces, span_metrics]
+            metrics:
+              exporters: [otlp_http/metrics]
+            logs:
+              exporters: [otlp_http/logs]
+            profiles:
+              exporters: [nop]

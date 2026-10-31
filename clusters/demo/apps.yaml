@@ -1,0 +1,24 @@
+# The OpenTelemetry Demo, with its Collector sending traces, logs and metrics to
+# Telemetry Machine.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 20m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./apps
+  prune: true
+  wait: true
+  dependsOn:
+    - name: infrastructure
+  # See infrastructure.yaml.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: telemetry-machine

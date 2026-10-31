@@ -1,0 +1,363 @@
+# One Collector for the whole cluster. It sends:
+#   - Kubernetes events to the k8s_events dataset,
+#   - cluster metrics (k8s_cluster receiver) to k8s_metrics,
+#   - Kubernetes objects (k8sobjects receiver) to k8s_resources: changes as
+#     they happen, and a full listing every 30 minutes.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cluster-collector
+  namespace: opentelemetry
+  annotations:
+    # The values hold the Collector's own ${env:...} references, which Flux's
+    # variable substitution would otherwise try to fill.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+spec:
+  interval: 1h
+  # k8sobjects/inventory lists VerticalPodAutoscalers, and the Collector won't
+  # start until their CRD exists.
+  dependsOn:
+    - name: vertical-pod-autoscaler
+      namespace: vpa-system
+  chart:
+    spec:
+      chart: opentelemetry-collector
+      version: 0.178.1
+      sourceRef:
+        kind: HelmRepository
+        name: open-telemetry
+        namespace: flux-system
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    mode: deployment
+    replicaCount: 1
+    image:
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      tag: 0.164.0
+    resources:
+      requests:
+        cpu: 25m
+        memory: 256Mi
+      limits:
+        memory: 256Mi
+    # Nothing sends to this Collector, so it needs no Service or receiver ports.
+    service:
+      enabled: false
+    ports:
+      otlp:
+        enabled: false
+      otlp-http:
+        enabled: false
+      jaeger-compact:
+        enabled: false
+      jaeger-thrift:
+        enabled: false
+      jaeger-grpc:
+        enabled: false
+      zipkin:
+        enabled: false
+    presets:
+      kubernetesEvents:
+        enabled: true
+      clusterMetrics:
+        enabled: true
+      kubernetesAttributes:
+        enabled: true
+    extraEnvs:
+      - name: TM_INGEST_KEY
+        valueFrom:
+          secretKeyRef:
+            name: telemetry-machine
+            key: ingest-key
+    clusterRole:
+      create: true
+      # Read access for the objects k8sobjects/resources and
+      # k8sobjects/inventory collect.
+      rules:
+        - apiGroups: [""]
+          resources:
+            - pods
+            - nodes
+            - services
+            - configmaps
+            - persistentvolumeclaims
+            - endpoints
+            - namespaces
+            - serviceaccounts
+            - persistentvolumes
+            - limitranges
+            - resourcequotas
+          verbs: [get, list, watch]
+        - apiGroups: [apps]
+          resources: [deployments, statefulsets, daemonsets, replicasets, controllerrevisions]
+          verbs: [get, list, watch]
+        - apiGroups: [batch]
+          resources: [jobs, cronjobs]
+          verbs: [get, list, watch]
+        - apiGroups: [coordination.k8s.io]
+          resources: [leases]
+          verbs: [get, list, watch]
+        - apiGroups: [discovery.k8s.io]
+          resources: [endpointslices]
+          verbs: [get, list, watch]
+        - apiGroups: [rbac.authorization.k8s.io]
+          resources: [clusterroles, clusterrolebindings, roles, rolebindings]
+          verbs: [get, list, watch]
+        - apiGroups: [apiregistration.k8s.io]
+          resources: [apiservices]
+          verbs: [get, list, watch]
+        - apiGroups: [admissionregistration.k8s.io]
+          resources: [validatingwebhookconfigurations, mutatingwebhookconfigurations]
+          verbs: [get, list, watch]
+        - apiGroups: [policy]
+          resources: [poddisruptionbudgets]
+          verbs: [get, list, watch]
+        - apiGroups: [storage.k8s.io]
+          resources: [storageclasses, volumeattachments, csidrivers, csinodes, csistoragecapacities]
+          verbs: [get, list, watch]
+        - apiGroups: [scheduling.k8s.io]
+          resources: [priorityclasses]
+          verbs: [get, list, watch]
+        - apiGroups: [node.k8s.io]
+          resources: [runtimeclasses]
+          verbs: [get, list, watch]
+        - apiGroups: [networking.k8s.io]
+          resources: [ingresses, ingressclasses, networkpolicies]
+          verbs: [get, list, watch]
+        - apiGroups: [autoscaling]
+          resources: [horizontalpodautoscalers]
+          verbs: [get, list, watch]
+        - apiGroups: [autoscaling.k8s.io]
+          resources: [verticalpodautoscalers]
+          verbs: [get, list, watch]
+        - apiGroups: [helm.toolkit.fluxcd.io]
+          resources: [helmreleases]
+          verbs: [get, list, watch]
+        - apiGroups: [kustomize.toolkit.fluxcd.io]
+          resources: [kustomizations]
+          verbs: [get, list, watch]
+        - apiGroups: [source.toolkit.fluxcd.io]
+          resources: [gitrepositories, helmrepositories, ocirepositories, helmcharts, buckets]
+          verbs: [get, list, watch]
+    config:
+      receivers:
+        # This Collector only reads from the Kubernetes API.
+        otlp: null
+        jaeger: null
+        zipkin: null
+        prometheus: null
+        k8s_cluster:
+          collection_interval: 30s
+          allocatable_types_to_report: [cpu, memory]
+          metrics:
+            k8s.container.status.reason:
+              enabled: true
+            k8s.container.status.state:
+              enabled: true
+            k8s.node.condition:
+              enabled: true
+            k8s.persistentvolume.status.phase:
+              enabled: true
+            k8s.persistentvolume.storage.capacity:
+              enabled: true
+            k8s.persistentvolumeclaim.status.phase:
+              enabled: true
+            k8s.persistentvolumeclaim.storage.capacity:
+              enabled: true
+            k8s.persistentvolumeclaim.storage.request:
+              enabled: true
+            k8s.pod.status_reason:
+              enabled: true
+            k8s.service.endpoint.count:
+              enabled: true
+            k8s.service.load_balancer.ingress.count:
+              enabled: true
+            k8s.replicaset.available:
+              enabled: false
+            k8s.replicaset.desired:
+              enabled: false
+          resource_attributes:
+            container.runtime:
+              enabled: true
+            container.runtime.version:
+              enabled: true
+            k8s.container.status.last_terminated_reason:
+              enabled: true
+            k8s.kubelet.version:
+              enabled: true
+            k8s.persistentvolume.reclaim_policy:
+              enabled: true
+            k8s.pod.qos_class:
+              enabled: true
+            k8s.service.name:
+              enabled: true
+            k8s.service.publish_not_ready_addresses:
+              enabled: true
+            k8s.service.traffic_distribution:
+              enabled: true
+            k8s.service.type:
+              enabled: true
+            k8s.service.uid:
+              enabled: true
+            os.description:
+              enabled: true
+            os.type:
+              enabled: true
+        # Each change to these objects, as it happens.
+        k8sobjects/resources:
+          objects:
+            - {name: pods, mode: watch}
+            - {name: nodes, mode: watch}
+            - {name: namespaces, mode: watch}
+            - {name: services, mode: watch}
+            - {name: configmaps, mode: watch}
+            - {name: deployments, group: apps, mode: watch}
+            - {name: daemonsets, group: apps, mode: watch}
+            - {name: statefulsets, group: apps, mode: watch}
+            - {name: replicasets, group: apps, mode: watch}
+            - {name: jobs, group: batch, mode: watch}
+            - {name: cronjobs, group: batch, mode: watch}
+            - {name: helmreleases, group: helm.toolkit.fluxcd.io, mode: watch}
+            - {name: kustomizations, group: kustomize.toolkit.fluxcd.io, mode: watch}
+            - {name: gitrepositories, group: source.toolkit.fluxcd.io, mode: watch}
+            - {name: helmrepositories, group: source.toolkit.fluxcd.io, mode: watch}
+            - {name: helmcharts, group: source.toolkit.fluxcd.io, mode: watch}
+            - {name: verticalpodautoscalers, group: autoscaling.k8s.io, mode: watch}
+        # A full listing every 30 minutes, staggered so the lists don't all hit
+        # the API server at once. Every kind listed must exist in the cluster,
+        # or the Collector won't start.
+        k8sobjects/inventory:
+          interval: 30m
+          objects:
+            - {name: pods, mode: pull, initial_delay: 0s}
+            - {name: nodes, mode: pull, initial_delay: 5s}
+            - {name: services, mode: pull, initial_delay: 10s}
+            - {name: configmaps, mode: pull, initial_delay: 15s}
+            - {name: persistentvolumeclaims, mode: pull, initial_delay: 20s}
+            - {name: namespaces, mode: pull, initial_delay: 25s}
+            - {name: serviceaccounts, mode: pull, initial_delay: 30s}
+            - {name: persistentvolumes, mode: pull, initial_delay: 35s}
+            - {name: limitranges, mode: pull, initial_delay: 40s}
+            - {name: resourcequotas, mode: pull, initial_delay: 45s}
+            - {name: endpointslices, group: discovery.k8s.io, mode: pull, initial_delay: 50s}
+            - {name: deployments, group: apps, mode: pull, initial_delay: 55s}
+            - {name: statefulsets, group: apps, mode: pull, initial_delay: 60s}
+            - {name: daemonsets, group: apps, mode: pull, initial_delay: 65s}
+            - {name: replicasets, group: apps, mode: pull, initial_delay: 70s}
+            - {name: jobs, group: batch, mode: pull, initial_delay: 75s}
+            - {name: cronjobs, group: batch, mode: pull, initial_delay: 80s}
+            - {name: leases, group: coordination.k8s.io, mode: pull, initial_delay: 85s}
+            - {name: clusterroles, group: rbac.authorization.k8s.io, mode: pull, initial_delay: 90s}
+            - {name: clusterrolebindings, group: rbac.authorization.k8s.io, mode: pull, initial_delay: 95s}
+            - {name: roles, group: rbac.authorization.k8s.io, mode: pull, initial_delay: 100s}
+            - {name: rolebindings, group: rbac.authorization.k8s.io, mode: pull, initial_delay: 105s}
+            - {name: validatingwebhookconfigurations, group: admissionregistration.k8s.io, mode: pull, initial_delay: 110s}
+            - {name: mutatingwebhookconfigurations, group: admissionregistration.k8s.io, mode: pull, initial_delay: 115s}
+            - {name: apiservices, group: apiregistration.k8s.io, mode: pull, initial_delay: 120s}
+            - {name: poddisruptionbudgets, group: policy, mode: pull, initial_delay: 125s}
+            - {name: storageclasses, group: storage.k8s.io, mode: pull, initial_delay: 130s}
+            - {name: volumeattachments, group: storage.k8s.io, mode: pull, initial_delay: 135s}
+            - {name: csidrivers, group: storage.k8s.io, mode: pull, initial_delay: 140s}
+            - {name: csinodes, group: storage.k8s.io, mode: pull, initial_delay: 145s}
+            - {name: csistoragecapacities, group: storage.k8s.io, mode: pull, initial_delay: 150s}
+            - {name: priorityclasses, group: scheduling.k8s.io, mode: pull, initial_delay: 155s}
+            - {name: runtimeclasses, group: node.k8s.io, mode: pull, initial_delay: 160s}
+            - {name: ingresses, group: networking.k8s.io, mode: pull, initial_delay: 165s}
+            - {name: ingressclasses, group: networking.k8s.io, mode: pull, initial_delay: 170s}
+            - {name: networkpolicies, group: networking.k8s.io, mode: pull, initial_delay: 175s}
+            - {name: horizontalpodautoscalers, group: autoscaling, mode: pull, initial_delay: 180s}
+            - {name: verticalpodautoscalers, group: autoscaling.k8s.io, mode: pull, initial_delay: 185s}
+            - {name: helmreleases, group: helm.toolkit.fluxcd.io, mode: pull, initial_delay: 190s}
+            - {name: kustomizations, group: kustomize.toolkit.fluxcd.io, mode: pull, initial_delay: 195s}
+            - {name: gitrepositories, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 200s}
+            - {name: helmrepositories, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 205s}
+            - {name: ocirepositories, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 210s}
+            - {name: helmcharts, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 215s}
+            - {name: buckets, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 220s}
+      processors:
+        # Detects os.type and the like. host.name would be the Collector pod's
+        # name, so it is left out.
+        resource_detection/system:
+          detectors: [env, system]
+          override: false
+          system:
+            resource_attributes:
+              host.name:
+                enabled: false
+        # Flattens each event into attributes: its reason, message, the object
+        # it is about (object.kind, object.name, ...), and a severity from its
+        # type (Normal or Warning).
+        transform/events:
+          error_mode: ignore
+          log_statements:
+            - context: log
+              statements:
+                - set(attributes["watch-type"], body["type"]) where IsMap(body) and body["type"] != nil
+                - merge_maps(attributes, body, "upsert") where IsMap(body) and body["object"] == nil
+                - merge_maps(attributes, body["object"], "upsert") where IsMap(body) and body["object"] != nil
+                - merge_maps(attributes, attributes["metadata"], "upsert") where IsMap(attributes["metadata"])
+                - set(attributes["object.kind"], attributes["regarding"]["kind"]) where IsMap(attributes["regarding"]) and attributes["regarding"]["kind"] != nil
+                - set(attributes["object.name"], attributes["regarding"]["name"]) where IsMap(attributes["regarding"]) and attributes["regarding"]["name"] != nil
+                - set(attributes["object.namespace"], attributes["regarding"]["namespace"]) where IsMap(attributes["regarding"]) and attributes["regarding"]["namespace"] != nil
+                - set(attributes["object.apiVersion"], attributes["regarding"]["apiVersion"]) where IsMap(attributes["regarding"]) and attributes["regarding"]["apiVersion"] != nil
+                - set(attributes["object.uid"], attributes["regarding"]["uid"]) where IsMap(attributes["regarding"]) and attributes["regarding"]["uid"] != nil
+                - delete_key(attributes, "k8s.resource.name")
+                - set(attributes["deprecatedCount"], Int(attributes["deprecatedCount"])) where attributes["deprecatedCount"] != nil
+                - set(severity_text, attributes["type"]) where attributes["type"] == "Normal" or attributes["type"] == "Warning"
+                - set(severity_number, SEVERITY_NUMBER_INFO) where attributes["type"] == "Normal"
+                - set(severity_number, SEVERITY_NUMBER_WARN) where attributes["type"] == "Warning"
+        # Flattens each object into attributes (metadata, spec and status), and
+        # records how it arrived in watch-type: ADDED, MODIFIED or DELETED from
+        # a watch, LIST from the 30-minute listing.
+        transform/resources:
+          error_mode: ignore
+          log_statements:
+            - context: log
+              statements:
+                - set(attributes["watch-type"], body["type"]) where IsMap(body) and body["type"] != nil
+                - set(attributes["watch-type"], "LIST") where IsMap(body) and body["object"] == nil
+                - delete_key(body["metadata"], "managedFields") where attributes["watch-type"] == "LIST" and IsMap(body["metadata"])
+                - merge_maps(attributes, body, "upsert") where attributes["watch-type"] == "LIST"
+                - merge_maps(attributes, body["object"], "upsert") where IsMap(body) and IsMap(body["object"])
+                - merge_maps(attributes, attributes["metadata"], "upsert") where IsMap(attributes["metadata"])
+                - merge_maps(attributes, attributes["spec"], "upsert") where IsMap(attributes["spec"])
+                - merge_maps(attributes, attributes["status"], "upsert") where IsMap(attributes["status"])
+      # Telemetry Machine takes OTLP/HTTP. X-API-Key authenticates, and
+      # X-Dataset-Name picks the dataset the data lands in.
+      exporters:
+        debug: null
+        otlp_http/k8s_events:
+          endpoint: https://api.telemetrymachine.com
+          headers:
+            X-API-Key: ${env:TM_INGEST_KEY}
+            X-Dataset-Name: k8s_events
+        otlp_http/k8s_metrics:
+          endpoint: https://api.telemetrymachine.com
+          headers:
+            X-API-Key: ${env:TM_INGEST_KEY}
+            X-Dataset-Name: k8s_metrics
+        otlp_http/k8s_resources:
+          endpoint: https://api.telemetrymachine.com
+          headers:
+            X-API-Key: ${env:TM_INGEST_KEY}
+            X-Dataset-Name: k8s_resources
+      service:
+        pipelines:
+          traces: null
+          logs:
+            receivers: [k8sobjects]
+            processors: [memory_limiter, resource_detection/system, transform/events, batch]
+            exporters: [otlp_http/k8s_events]
+          logs/resources:
+            receivers: [k8sobjects/resources, k8sobjects/inventory]
+            processors: [memory_limiter, resource_detection/system, transform/resources, batch]
+            exporters: [otlp_http/k8s_resources]
+          metrics:
+            receivers: [k8s_cluster]
+            processors: [k8s_attributes, memory_limiter, resource_detection/system, batch]
+            exporters: [otlp_http/k8s_metrics]
