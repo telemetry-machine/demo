@@ -112,7 +112,7 @@ spec:
           resources: [apiservices]
           verbs: [get, list, watch]
         - apiGroups: [admissionregistration.k8s.io]
-          resources: [validatingwebhookconfigurations, mutatingwebhookconfigurations]
+          resources: [validatingwebhookconfigurations, mutatingwebhookconfigurations, validatingadmissionpolicies, validatingadmissionpolicybindings]
           verbs: [get, list, watch]
         - apiGroups: [policy]
           resources: [poddisruptionbudgets]
@@ -143,6 +143,12 @@ spec:
           verbs: [get, list, watch]
         - apiGroups: [source.toolkit.fluxcd.io]
           resources: [gitrepositories, helmrepositories, ocirepositories, helmcharts, buckets]
+          verbs: [get, list, watch]
+        - apiGroups: [k3s.cattle.io]
+          resources: [addons]
+          verbs: [get, list, watch]
+        - apiGroups: [helm.cattle.io]
+          resources: [helmcharts, helmchartconfigs]
           verbs: [get, list, watch]
     config:
       receivers:
@@ -228,6 +234,11 @@ spec:
             - {name: helmrepositories, group: source.toolkit.fluxcd.io, mode: watch}
             - {name: helmcharts, group: source.toolkit.fluxcd.io, mode: watch}
             - {name: verticalpodautoscalers, group: autoscaling.k8s.io, mode: watch}
+            - {name: addons, group: k3s.cattle.io, mode: watch}
+            - {name: helmcharts, group: helm.cattle.io, mode: watch}
+            - {name: helmchartconfigs, group: helm.cattle.io, mode: watch}
+            - {name: validatingadmissionpolicies, group: admissionregistration.k8s.io, mode: watch}
+            - {name: validatingadmissionpolicybindings, group: admissionregistration.k8s.io, mode: watch}
         # A full listing every 30 minutes, staggered so the lists don't all hit
         # the API server at once. Every kind listed must exist in the cluster,
         # or the Collector won't start.
@@ -279,6 +290,11 @@ spec:
             - {name: ocirepositories, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 210s}
             - {name: helmcharts, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 215s}
             - {name: buckets, group: source.toolkit.fluxcd.io, mode: pull, initial_delay: 220s}
+            - {name: addons, group: k3s.cattle.io, mode: pull, initial_delay: 225s}
+            - {name: helmcharts, group: helm.cattle.io, mode: pull, initial_delay: 230s}
+            - {name: helmchartconfigs, group: helm.cattle.io, mode: pull, initial_delay: 235s}
+            - {name: validatingadmissionpolicies, group: admissionregistration.k8s.io, mode: pull, initial_delay: 240s}
+            - {name: validatingadmissionpolicybindings, group: admissionregistration.k8s.io, mode: pull, initial_delay: 245s}
       processors:
         # Detects os.type and the like. host.name would be the Collector pod's
         # name, so it is left out.
