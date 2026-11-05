@@ -77,11 +77,6 @@ spec:
           requests: {cpu: 25m, memory: 256Mi}
           limits: {cpu: 500m, memory: 512Mi}
       astronomy-db:
-        # Start as the postgres user, so the image's entrypoint skips gosu.
-        securityContext:
-          runAsUser: 999
-          runAsGroup: 999
-          runAsNonRoot: true
         resources:
           requests: {cpu: 10m, memory: 96Mi}
           limits: {cpu: 500m, memory: 192Mi}
